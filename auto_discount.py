@@ -7,102 +7,121 @@ import time
 # Get API token from GitHub Secrets
 API_TOKEN = os.environ['GUMROAD_TOKEN']
 
+def test_api_connection():
+    """Test if our API token is working"""
+    print("🔍 Testing API connection...")
+    
+    headers = {
+        "Authorization": f"Bearer {API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    # Test with a simple GET request to products
+    test_url = "https://api.gumroad.com/v2/products"
+    response = requests.get(test_url, headers=headers)
+    
+    print(f"📡 API Test Response: {response.status_code}")
+    
+    if response.status_code == 200:
+        data = response.json()
+        products = data.get('products', [])
+        print(f"✅ API Connection SUCCESSFUL!")
+        print(f"📊 Found {len(products)} products")
+        
+        for product in products:
+            print(f"   - {product['name']} (ID: {product['id']})")
+        
+        return True, products
+    else:
+        print(f"❌ API Connection FAILED: {response.status_code}")
+        print(f"   Error: {response.text[:200]}")
+        return False, []
+
 def generate_discount_code():
     prefix = "JEEPHYSICS_"
     characters = string.ascii_uppercase + string.digits
     random_part = ''.join(random.choice(characters) for i in range(6))
     return prefix + random_part
 
-def update_all_products_discount_codes():
-    # Gumroad API endpoint for products
-    url = "https://api.gumroad.com/v2/products"
+def update_product_discount(product_id, product_name):
+    """Update discount code for a single product"""
+    new_code = generate_discount_code()
     
     headers = {
         "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json",
-        "User-Agent": "Gumroad-Discount-Bot/1.0"
+        "Content-Type": "application/json"
     }
     
-    try:
-        # Get list of all products
-        print("📦 Fetching all products...")
-        response = requests.get(url, headers=headers)
-        print(f"Products API Response: {response.status_code}")
+    # Try the CORRECT Gumroad API v2 format
+    update_url = f"https://api.gumroad.com/v2/products/{product_id}"
+    
+    # Multiple data format attempts
+    data_formats = [
+        {"discount_code": new_code},
+        {"product": {"discount_code": new_code}},
+        {"offer_code": new_code},
+        {"product": {"offer_code": new_code}}
+    ]
+    
+    print(f"   Testing {len(data_formats)} different data formats...")
+    
+    for i, data in enumerate(data_formats, 1):
+        print(f"   Format {i}: {data}")
         
-        if response.status_code == 200:
-            data = response.json()
-            products = data.get('products', [])
-            print(f"🎯 Found {len(products)} products")
+        try:
+            response = requests.put(update_url, headers=headers, json=data)
+            print(f"      Response: {response.status_code}")
             
-            success_count = 0
-            total_products = len(products)
-            
-            if total_products == 0:
-                print("❌ No products found in your account")
-                return False
-            
-            # Update discount code for EVERY product
-            for index, product in enumerate(products, 1):
-                product_id = product['id']
-                product_name = product['name']
-                product_permalink = product.get('permalink', 'N/A')
+            if response.status_code == 200:
+                print(f"   ✅ SUCCESS with format {i}! Code: {new_code}")
+                return True
+            else:
+                print(f"      Error: {response.text[:100]}...")
                 
-                print(f"\n🔄 [{index}/{total_products}] Updating: {product_name}")
-                print(f"   ID: {product_id}")
-                print(f"   URL: https://gumroad.com/l/{product_permalink}")
-                
-                # Generate unique discount code
-                new_code = generate_discount_code()
-                print(f"   New Code: {new_code}")
-                
-                # Update the product using the CORRECT API format
-                update_url = f"https://api.gumroad.com/v2/products/{product_id}"
-                
-                # CORRECT data format for Gumroad API
-                update_data = {
-                    "product": {
-                        "discount_code": new_code
-                    }
-                }
-                
-                # Make the update request
-                update_response = requests.put(
-                    update_url, 
-                    headers=headers, 
-                    json=update_data
-                )
-                
-                print(f"   API Response: {update_response.status_code}")
-                
-                if update_response.status_code == 200:
-                    print(f"   ✅ SUCCESS! Updated discount code to: {new_code}")
-                    success_count += 1
-                else:
-                    print(f"   ❌ FAILED: {update_response.text[:200]}...")
-                
-                # Delay between requests to avoid rate limiting
-                if index < total_products:
-                    time.sleep(2)
-            
-            # Final summary
-            print(f"\n🎉 FINAL SUMMARY")
-            print(f"   Updated: {success_count}/{total_products} products")
-            print(f"   Success Rate: {(success_count/total_products)*100:.1f}%")
-            
-            return success_count > 0
-            
-        else:
-            print(f"❌ Failed to fetch products. Status: {response.status_code}")
-            print(f"   Error: {response.text[:500]}...")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        except Exception as e:
+            print(f"      Exception: {e}")
+        
+        time.sleep(1)
+    
+    print(f"   ❌ All formats failed for {product_name}")
+    return False
+
+def main():
+    print("🚀 Starting Gumroad Discount Code Automation...")
+    
+    # First test API connection
+    success, products = test_api_connection()
+    
+    if not success:
+        print("💥 Cannot proceed - API connection failed")
         return False
+    
+    if not products:
+        print("💥 No products found")
+        return False
+    
+    print(f"\n🔄 Starting to update {len(products)} products...")
+    
+    success_count = 0
+    for product in products:
+        product_id = product['id']
+        product_name = product['name']
+        
+        print(f"\n📦 Updating: {product_name}")
+        print(f"   ID: {product_id}")
+        
+        if update_product_discount(product_id, product_name):
+            success_count += 1
+        
+        time.sleep(2)  # Rate limiting
+    
+    print(f"\n🎉 FINAL RESULTS:")
+    print(f"   Successfully updated: {success_count}/{len(products)} products")
+    
+    return success_count > 0
 
 if __name__ == "__main__":
-    print("🚀 Starting Gumroad Discount Code Automation...")
-    success = update_all_products_discount_codes()
+    success = main()
     if success:
         print("✨ Automation completed successfully!")
     else:
