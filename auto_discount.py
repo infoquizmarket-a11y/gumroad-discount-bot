@@ -7,122 +7,85 @@ import time
 # Get API token from GitHub Secrets
 API_TOKEN = os.environ['GUMROAD_TOKEN']
 
-def test_api_connection():
-    """Test if our API token is working"""
-    print("🔍 Testing API connection...")
-    
-    headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    # Test with a simple GET request to products
-    test_url = "https://api.gumroad.com/v2/products"
-    response = requests.get(test_url, headers=headers)
-    
-    print(f"📡 API Test Response: {response.status_code}")
-    
-    if response.status_code == 200:
-        data = response.json()
-        products = data.get('products', [])
-        print(f"✅ API Connection SUCCESSFUL!")
-        print(f"📊 Found {len(products)} products")
-        
-        for product in products:
-            print(f"   - {product['name']} (ID: {product['id']})")
-        
-        return True, products
-    else:
-        print(f"❌ API Connection FAILED: {response.status_code}")
-        print(f"   Error: {response.text[:200]}")
-        return False, []
-
 def generate_discount_code():
-    prefix = "JEEPHYSICS_"
+    """Generate a random discount code"""
     characters = string.ascii_uppercase + string.digits
-    random_part = ''.join(random.choice(characters) for i in range(6))
-    return prefix + random_part
-
-def update_product_discount(product_id, product_name):
-    """Update discount code for a single product"""
-    new_code = generate_discount_code()
-    
-    headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    # Try the CORRECT Gumroad API v2 format
-    update_url = f"https://api.gumroad.com/v2/products/{product_id}"
-    
-    # Multiple data format attempts
-    data_formats = [
-        {"discount_code": new_code},
-        {"product": {"discount_code": new_code}},
-        {"offer_code": new_code},
-        {"product": {"offer_code": new_code}}
-    ]
-    
-    print(f"   Testing {len(data_formats)} different data formats...")
-    
-    for i, data in enumerate(data_formats, 1):
-        print(f"   Format {i}: {data}")
-        
-        try:
-            response = requests.put(update_url, headers=headers, json=data)
-            print(f"      Response: {response.status_code}")
-            
-            if response.status_code == 200:
-                print(f"   ✅ SUCCESS with format {i}! Code: {new_code}")
-                return True
-            else:
-                print(f"      Error: {response.text[:100]}...")
-                
-        except Exception as e:
-            print(f"      Exception: {e}")
-        
-        time.sleep(1)
-    
-    print(f"   ❌ All formats failed for {product_name}")
-    return False
+    random_code = ''.join(random.choice(characters) for i in range(8))
+    return random_code
 
 def main():
-    print("🚀 Starting Gumroad Discount Code Automation...")
+    print("🚀 Starting Universal Gumroad Discount Code Automation...")
     
-    # First test API connection
-    success, products = test_api_connection()
+    headers = {
+        "Authorization": f"Bearer {API_TOKEN}",
+        "Content-Type": "application/json"
+    }
     
-    if not success:
-        print("💥 Cannot proceed - API connection failed")
+    # Get all products
+    print("📦 Fetching all products...")
+    response = requests.get("https://api.gumroad.com/v2/products", headers=headers)
+    
+    if response.status_code != 200:
+        print(f"❌ Failed to fetch products: {response.status_code}")
+        print(f"Error: {response.text[:200]}")
         return False
     
-    if not products:
-        print("💥 No products found")
-        return False
+    products = response.json().get('products', [])
+    print(f"🎯 Found {len(products)} products total")
     
-    print(f"\n🔄 Starting to update {len(products)} products...")
+    if len(products) == 0:
+        print("❌ No products found in your account")
+        return False
     
     success_count = 0
-    for product in products:
+    
+    # Process ALL products regardless of name
+    for index, product in enumerate(products, 1):
         product_id = product['id']
         product_name = product['name']
+        product_type = product.get('product_type', 'N/A')
         
-        print(f"\n📦 Updating: {product_name}")
+        print(f"\n🔄 [{index}/{len(products)}] Processing: {product_name}")
+        print(f"   Type: {product_type}")
         print(f"   ID: {product_id}")
         
-        if update_product_discount(product_id, product_name):
-            success_count += 1
+        # Generate new random discount code
+        new_code = generate_discount_code()
+        print(f"   New Code: {new_code}")
         
-        time.sleep(2)  # Rate limiting
+        # Update the product
+        update_url = f"https://api.gumroad.com/v2/products/{product_id}"
+        
+        update_response = requests.put(
+            update_url, 
+            headers=headers, 
+            json={"discount_code": new_code}
+        )
+        
+        print(f"   API Response: {update_response.status_code}")
+        
+        if update_response.status_code == 200:
+            print(f"   ✅ SUCCESS! Updated discount code")
+            success_count += 1
+        else:
+            print(f"   ❌ FAILED: {update_response.text[:150]}...")
+        
+        # Wait between requests to avoid rate limiting
+        if index < len(products):
+            time.sleep(2)
     
-    print(f"\n🎉 FINAL RESULTS:")
-    print(f"   Successfully updated: {success_count}/{len(products)} products")
+    # Final results
+    print(f"\n🎉 UNIVERSAL AUTOMATION COMPLETE!")
+    print(f"   Total Products: {len(products)}")
+    print(f"   Successfully Updated: {success_count}")
+    print(f"   Failed: {len(products) - success_count}")
+    print(f"   Success Rate: {(success_count/len(products))*100:.1f}%")
     
     return success_count > 0
 
 if __name__ == "__main__":
     success = main()
     if success:
-        print("✨ Automation completed successfully!")
+        print("✨ All products processed successfully!")
     else:
-        print("💥 Automation completed with errors!")
+        print("💥 Some products failed to update!")
