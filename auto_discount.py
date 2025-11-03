@@ -6,16 +6,14 @@ import os
 # Get API token from GitHub Secrets
 API_TOKEN = os.environ['GUMROAD_TOKEN']
 
-def generate_discount_code():
+def generate_discount_code(product_name):
+    # Create unique prefix based on product name
     prefix = "JEEPHYSICS_"
     characters = string.ascii_uppercase + string.digits
     random_part = ''.join(random.choice(characters) for i in range(6))
     return prefix + random_part
 
-def update_gumroad_discount():
-    new_code = generate_discount_code()
-    
-    # CORRECT API ENDPOINT - List products first to get the right ID
+def update_all_products_discount_codes():
     url = "https://api.gumroad.com/v2/products"
     
     headers = {
@@ -24,7 +22,7 @@ def update_gumroad_discount():
     }
     
     try:
-        # First, get list of products to find the correct one
+        # Get list of all products
         response = requests.get(url, headers=headers)
         print(f"Products API Response: {response.status_code}")
         
@@ -32,19 +30,23 @@ def update_gumroad_discount():
             products = response.json().get('products', [])
             print(f"Found {len(products)} products")
             
-            # Find your JEE Physics product
-            target_product = None
-            for product in products:
-                print(f"Product: {product.get('name')} - ID: {product.get('id')}")
-                if "JEE Physics" in product.get('name', ''):
-                    target_product = product
-                    break
+            success_count = 0
+            total_products = len(products)
             
-            if target_product:
-                product_id = target_product['id']
-                print(f"Updating product: {target_product['name']} (ID: {product_id})")
+            # Update discount code for EVERY product
+            for product in products:
+                product_id = product['id']
+                product_name = product['name']
+                product_permalink = product.get('permalink', 'N/A')
                 
-                # Now update the discount code
+                print(f"\n--- Updating: {product_name} ---")
+                print(f"Product ID: {product_id}")
+                print(f"Permalink: {product_permalink}")
+                
+                # Generate unique discount code for this product
+                new_code = generate_discount_code(product_name)
+                
+                # Update the discount code
                 update_url = f"https://api.gumroad.com/v2/products/{product_id}"
                 update_data = {
                     "discount_code": new_code
@@ -52,17 +54,21 @@ def update_gumroad_discount():
                 
                 update_response = requests.put(update_url, headers=headers, json=update_data)
                 print(f"Update Response: {update_response.status_code}")
-                print(f"Update Response Text: {update_response.text}")
                 
                 if update_response.status_code == 200:
                     print(f"✅ Success! Discount code updated to: {new_code}")
-                    return True
+                    success_count += 1
                 else:
-                    print(f"❌ Update failed: {update_response.text}")
-                    return False
-            else:
-                print("❌ JEE Physics product not found in your products")
-                return False
+                    print(f"❌ Failed: {update_response.text}")
+                
+                # Small delay to avoid rate limiting
+                import time
+                time.sleep(1)
+            
+            # Final summary
+            print(f"\n🎉 SUMMARY: Updated {success_count} out of {total_products} products successfully!")
+            return success_count == total_products
+            
         else:
             print(f"❌ Failed to fetch products: {response.text}")
             return False
@@ -72,4 +78,4 @@ def update_gumroad_discount():
         return False
 
 if __name__ == "__main__":
-    update_gumroad_discount()
+    update_all_products_discount_codes()
